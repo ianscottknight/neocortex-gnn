@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "neocortex_gnn"
+version = "0.1.0"
+description = ""
+authors = ["Ian Scott Knight <isk@alumni.stanford.edu>"]
+license = "UNLICENSED"
+readme = "README.md"
+packages = [{include = "neocortex_gnn"}]
+
+[tool.poetry.dependencies]
+python = "^3.10,<3.12"
+numpy = "^1.24.1"
+pandas = "^1.5.2"
+torch = "^1.13.1"
+rdkit = "^2022.9.3"
+biopandas = "^0.4.1"
+scipy = "^1.10.0"
+fire = "^0.5.0"
+
+
+[tool.poetry.group.develop.dependencies]
+jupyter = "^1.0.0"
+pre-commit = "^2.21.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
