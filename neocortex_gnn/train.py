@@ -8,6 +8,8 @@ import torch.nn as nn
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import RandomSampler
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')  # added b/c: https://github.com/pytorch/pytorch/issues/11201
 
 from neocortex_gnn.util import set_cuda_visible_device, initialize_model
 from neocortex_gnn.dataset import ReceptorAndOptimalMatchingSpheresDataset, collate_fn
@@ -18,15 +20,15 @@ from neocortex_gnn.gnn import GNN
 class Args:
     lr: float = 0.0001
     epoch: int = 10000
-    ngpu: int = 1
+    ngpu: int = 0
     batch_size: int = 32
     num_workers: int = 7
     n_graph_layer: int = 4
     d_graph_layer: int = 140
-    n_FC_layer: int = 4
-    d_FC_layer: int = 128
-    receptor_data_dir: str = 'data/receptors/'
-    matching_spheres_data_dir: str = 'data/matching_spheres/'
+    n_fc_layer: int = 4
+    d_fc_layer: int = 128
+    receptor_data_dir: str = 'data/pdb/'
+    matching_spheres_data_dir: str = 'data/sph/'
     save_dir: str = 'models/'
     initial_mu: float = 4.0
     initial_dev: float = 1.0
@@ -91,11 +93,13 @@ def main(args: Args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # loss function
-    loss_fn = nn.BCELoss()
+    loss_fn = nn.MSELoss()
 
-    for epoch in range(args.epoch):
+    for epoch in range(1, args.epoch+1):
         #
         start = time.time()
+
+        print(f"epoch {epoch} - {start}")
 
         # collect losses of each iteration
         train_losses = []
@@ -127,6 +131,8 @@ def main(args: Args):
             train_true.append(S.data.cpu().numpy())
             train_pred.append(pred.data.cpu().numpy())
             # if i_batch > 10: break
+
+            print(f"loss: {loss.data.cpu().numpy()}")
 
         model.eval()
         for i_batch, sample in enumerate(test_dataloader):

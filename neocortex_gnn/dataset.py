@@ -9,23 +9,9 @@ from torch.utils.data import Dataset
 from rdkit.Chem.rdmolops import GetAdjacencyMatrix, GetDistanceMatrix
 from rdkit.Chem.rdmolfiles import MolFromPDBFile
 
-from neocortex_gnn import util
 from neocortex_gnn.util import one_hot_encode_dataframe_column
 
 random.seed(0)
-
-
-def get_atom_feature(m, is_ligand=True):
-    n = m.GetNumAtoms()
-    H = []
-    for i in range(n):
-        H.append(util.atom_feature(m, i, None, None))
-    H = np.array(H)
-    if is_ligand:
-        H = np.concatenate([H, np.zeros((n, 28))], 1)
-    else:
-        H = np.concatenate([np.zeros((n, 28)), H], 1)
-    return H
 
 
 class ReceptorAndOptimalMatchingSpheresDataset(Dataset):
@@ -40,7 +26,7 @@ class ReceptorAndOptimalMatchingSpheresDataset(Dataset):
         "element_symbol",
     ]
     ONE_HOT_ENCODABLE_PDB_COLUMNS_TO_ALLOWED_VALUES_DICT = {
-        "atom_name": [  # TODO: confirm that 20 standard amino acids are sufficient
+        "residue_name": [  # TODO: confirm that 20 standard amino acids are sufficient
             'ALA',
             'ARG',
             'ASN',
@@ -62,7 +48,7 @@ class ReceptorAndOptimalMatchingSpheresDataset(Dataset):
             'TYR',
             'VAL',
         ],
-        "residue_name": [  # TODO: get exhaustive list
+        "atom_name": [  # TODO: get exhaustive list
             'C',
             'CA',
             'CB',
@@ -115,8 +101,8 @@ class ReceptorAndOptimalMatchingSpheresDataset(Dataset):
     def __getitem__(self, idx):
         #
         key = self.keys[idx]
-        pdb_file_path = Path(self.receptors_dir.joinpath(key))
-        sph_file_path = Path(self.matching_spheres_dir.joinpath(key).as_posix())
+        pdb_file_path = Path(self.receptors_dir.joinpath(f"{key}.pdb"))
+        sph_file_path = Path(self.matching_spheres_dir.joinpath(f"{key}.sph").as_posix())
 
         # load PDB to dataframe
         df_pdb = PandasPdb().read_pdb(pdb_file_path.as_posix()).df["ATOM"]
@@ -152,7 +138,7 @@ class ReceptorAndOptimalMatchingSpheresDataset(Dataset):
                     continue
                 if valid:
                     sph_records.append(line.strip().split())
-        sph_records = np.array(sph_records).astype(float)
+        sph_records = np.array(sph_records, dtype=float)
         df_sph = pd.DataFrame.from_records(sph_records)
 
         # keep only relevant SPH columns
@@ -163,10 +149,10 @@ class ReceptorAndOptimalMatchingSpheresDataset(Dataset):
 
         # if n1+n2 > 300 : return None
         sample = {
-            'P': df_pdb.to_numpy(),
+            'P': df_pdb.apply(pd.to_numeric).to_numpy(),
             'A': adjacency_matrix,
             'D': distance_matrix,
-            'S': df_sph.to_numpy(),
+            'S': np.reshape(df_sph.apply(pd.to_numeric).to_numpy(), (45*3,)),
             'key': key,
         }
 
@@ -175,17 +161,16 @@ class ReceptorAndOptimalMatchingSpheresDataset(Dataset):
 
 def collate_fn(batch):
     #
-    max_natoms = max([len(item['H']) for item in batch if item is not None])
+    max_natoms = max([len(item['P']) for item in batch if item is not None])
 
     #
-    P = np.zeros((len(batch), max_natoms, 56))
+    P = np.zeros((len(batch), max_natoms, 65))
     A = np.zeros((len(batch), max_natoms, max_natoms))
     D = np.zeros((len(batch), max_natoms, max_natoms))
-    S = np.zeros((len(batch),))
+    S = np.zeros((len(batch), 45*3))
     keys = []
     for i in range(len(batch)):
         natom = len(batch[i]['P'])
-
         P[i, :natom] = batch[i]['P']
         A[i, :natom, :natom] = batch[i]['A']
         D[i, :natom, :natom] = batch[i]['D']

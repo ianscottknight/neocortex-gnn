@@ -6,7 +6,9 @@ from layers import GATGate
 
 
 class GNN(torch.nn.Module):
-    NUM_ATOM_FEATURES = 28
+    NUM_ATOM_FEATURES = 65
+    NUM_SPHERES = 45
+    NUM_SPHERE_COORDINATES = 3
 
     def __init__(self, args):
         super().__init__()
@@ -22,66 +24,67 @@ class GNN(torch.nn.Module):
         self.layers1 = [d_graph_layer for i in range(n_graph_layer+1)]
         self.gconv1 = nn.ModuleList([GATGate(self.layers1[i], self.layers1[i+1]) for i in range(len(self.layers1)-1)]) 
         self.fc = nn.ModuleList([nn.Linear(self.layers1[-1], d_fc_layer) if i == 0 else
-                                 nn.Linear(d_fc_layer, 1) if i == n_fc_layer - 1 else
+                                 nn.Linear(d_fc_layer, self.NUM_SPHERES * self.NUM_SPHERE_COORDINATES) if i == n_fc_layer - 1 else
                                  nn.Linear(d_fc_layer, d_fc_layer) for i in range(n_fc_layer)])
         self.mu = nn.Parameter(torch.Tensor([args.initial_mu]).float())
         self.dev = nn.Parameter(torch.Tensor([args.initial_dev]).float())
-        self.embede = nn.Linear(2 * self.NUM_ATOM_FEATURES, d_graph_layer, bias=False)
+        self.embede = nn.Linear(self.NUM_ATOM_FEATURES, d_graph_layer, bias=False)
         
     def embed_graph(self, data):
         #
-        c_hs, c_adjs1, c_adjs2, c_valid = data
-        c_hs = self.embede(c_hs)
-        hs_size = c_hs.size()
-        c_adjs2 = torch.exp(-torch.pow(c_adjs2-self.mu.expand_as(c_adjs2), 2) / self.dev) + c_adjs1
-        regularization = torch.empty(len(self.gconv1), device=c_hs.device)
+        c_p, c_a, c_d = data
+        c_p = self.embede(c_p)
+        p_size = c_p.size()
+        c_d = torch.exp(-torch.pow(c_d-self.mu.expand_as(c_d), 2) / self.dev) + c_a
+        regularization = torch.empty(len(self.gconv1), device=c_p.device)
 
         #
         for k in range(len(self.gconv1)):
-            c_hs1 = self.gconv1[k](c_hs, c_adjs1)
-            c_hs2 = self.gconv1[k](c_hs, c_adjs2)
-            c_hs = c_hs2-c_hs1
-            c_hs = F.dropout(c_hs, p=self.dropout_rate, training=self.training)
+            c_p1 = self.gconv1[k](c_p, c_a)
+            c_p2 = self.gconv1[k](c_p, c_d)
+            c_p = c_p2 - c_p1
+            c_p = F.dropout(c_p, p=self.dropout_rate, training=self.training)
 
         #
-        c_hs = c_hs*c_valid.unsqueeze(-1).repeat(1, 1, c_hs.size(-1))
-        c_hs = c_hs.sum(1)
+        c_p = c_p.sum(1)
 
-        return c_hs
+        return c_p
 
-    def fully_connected(self, c_hs):
+    def fully_connected(self, c_p):
         #
-        regularization = torch.empty(len(self.fc)*1-1, device=c_hs.device)
+        regularization = torch.empty(len(self.fc) * 1 - 1, device=c_p.device)
 
         #
         for k in range(len(self.fc)):
-            #c_hs = self.fc[k](c_hs)
-            if k<len(self.fc)-1:
-                c_hs = self.fc[k](c_hs)
-                c_hs = F.dropout(c_hs, p=self.dropout_rate, training=self.training)
-                c_hs = F.relu(c_hs)
+            #c_p = self.fc[k](c_p)
+            if k < len(self.fc) - 1:
+                c_p = self.fc[k](c_p)
+                c_p = F.dropout(c_p, p=self.dropout_rate, training=self.training)
+                c_p = F.relu(c_p)
             else:
-                c_hs = self.fc[k](c_hs)
+                c_p = self.fc[k](c_p)
 
         #
-        c_hs = torch.sigmoid(c_hs)
+        c_p = torch.sigmoid(c_p)
 
-        return c_hs
+        return c_p
 
     def train_model(self, data):
         # embed graph
-        c_hs = self.embed_graph(data)
+        c_p = self.embed_graph(data)
 
         # fully connected NN
-        c_hs = self.fully_connected(c_hs)
-        c_hs = c_hs.view(-1) 
+        c_p = self.fully_connected(c_p)
 
         # note that if you don't use concrete dropout, regularization 1-2 is zero
-        return c_hs
+        return c_p
     
-    def test_model(self, data1):
-        c_hs = self.embed_graph(data1)
-        c_hs = self.fully_connected(c_hs)
-        c_hs = c_hs.view(-1)
+    def test_model(self, data):
+        # embed graph
+        c_p = self.embed_graph(data)
 
-        return c_hs
+        # fully connected NN
+        c_p = self.fully_connected(c_p)
+
+        # note that if you don't use concrete dropout, regularization 1-2 is zero
+        return c_p

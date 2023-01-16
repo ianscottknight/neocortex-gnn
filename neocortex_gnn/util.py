@@ -4,18 +4,11 @@ import torch
 import torch.nn as nn
 
 
-def one_hot_encode_value(value, allowed_values):
-    if value not in allowed_values:
-        raise ValueError(f"Value '{value}' not found in allowed_values: {allowed_values}")
-
-    return list(map(lambda s: value == s, allowed_values))
-
-
 def one_hot_encode_dataframe_column(df, column, allowed_values):
     df = df.copy()
     for i, value in enumerate(sorted(df[column].unique())):
         df[f"{column}_{i + 1}_{allowed_values[i]}"] = df[column].apply(
-            lambda x: one_hot_encode_value(x, allowed_values)).astype(float)
+            lambda x: float(x == allowed_values[i]))
     del df[column]
 
     return df

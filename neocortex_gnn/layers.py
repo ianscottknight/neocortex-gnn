@@ -19,7 +19,7 @@ class GATGate(torch.nn.Module):
         batch_size = h.size()[0]
         n = h.size()[1]
         e = torch.einsum('ijl,ikl->ijk', (torch.matmul(h, self.A), h))
-        e += e.permute((0, 2, 1))
+        e += e.permute((0, 2, 1)).clone()
         zero_vec = -9e15 * torch.ones_like(e)
         attention = torch.where(adj > 0, e, zero_vec)
         attention = F.softmax(attention, dim=1)
